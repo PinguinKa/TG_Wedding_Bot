@@ -1,18 +1,14 @@
-# bot.py
+# bot.py  ─ минимальный, но рабочий
 import os
-import asyncio
 from datetime import datetime, timezone
 
 from telegram import Update
-import telegram.constants as constants
-from telegram.constants import UpdateType
+from telegram.constants import ParseMode  # только ParseMode – больше ничего не нужно
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
-    JobQueue,
 )
-
 
 from sqlalchemy import (
     create_engine,
@@ -22,18 +18,20 @@ from sqlalchemy import (
     Boolean,
     DateTime,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 
-# ──────────────────────────────── конфиг ────────────────────────────────
+# ─────────────── переменные окружения ───────────────
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BRIDE_CHAT_ID = int(os.getenv("BRIDE_CHAT_ID", "0"))
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
-
-# ───────────────────────────── база данных ─────────────────────────────
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///guests.db")
+
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN не задан!")
+
+# ─────────────── База данных ───────────────
 engine = create_engine(DB_URL, echo=False, pool_pre_ping=True)
-Session = scoped_session(sessionmaker(bind=engine, autoflush=False))
+Session = scoped_session(sessionmaker(bind=engine))
 Base = declarative_base()
 
 
@@ -48,26 +46,23 @@ class Guest(Base):
     notified = Column(Boolean, default=False)
     created = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    def __repr__(self) -> str:
-        return f"<Guest {self.name}>"
-
 
 Base.metadata.create_all(engine)
 
 
-# ───────────────────────────── хендлеры ──────────────────────────────
-async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+# ─────────────── Команды ───────────────
+async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "<b>Добро пожаловать, Надя! 💍</b>\n\n"
         "Вот что я умею:\n"
         "1. Автоматически присылать отклики на приглашение\n"
         "2. Показать список гостей — /guests\n\n"
         "Спасибо, что доверила мне такую важную миссию 🤍",
-        parse_mode=constants.ParseMode.HTML,
+        parse_mode=ParseMode.HTML,
     )
 
 
-async def cmd_guests(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_guests(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     db = Session()
     try:
         guests = db.query(Guest).filter_by(attending=True).order_by(Guest.created).all()
@@ -84,19 +79,17 @@ async def cmd_guests(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 line += f". <i>Пожелания: {g.wishes.strip()}</i>"
             lines.append(line)
 
-        await update.message.reply_text(
-            "\n".join(lines), parse_mode=constants.ParseMode.HTML
-        )
+        await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
     finally:
         db.close()
 
 
-# ────────────────────── фоновая проверка новых гостей ───────────────────
-async def check_new_guests(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+# ─────────────── Проверка новых гостей ───────────────
+async def check_new_guests(ctx: ContextTypes.DEFAULT_TYPE):
     db = Session()
     try:
-        new_guests = db.query(Guest).filter_by(notified=False).all()
-        for g in new_guests:
+        fresh = db.query(Guest).filter_by(notified=False).all()
+        for g in fresh:
             text = (
                 f"💌 <b>Ответ на приглашение</b>\n"
                 f"👤 <b>Гость:</b> {g.name}\n"
@@ -109,31 +102,23 @@ async def check_new_guests(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 await ctx.bot.send_message(ADMIN_CHAT_ID, text, parse_mode="HTML")
                 g.notified = True
                 db.commit()
-            except Exception as exc:
-                # если Телеграм временно недоступен — не ставим notified, повторим позже
-                print("Ошибка при отправке:", exc)
+            except Exception:
                 db.rollback()
     finally:
         db.close()
 
 
-# ───────────────────────────── старт приложения ─────────────────────────
+# ─────────────── Старт приложения ───────────────
 def main() -> None:
-    if not BOT_TOKEN:
-        raise RuntimeError("Переменная окружения BOT_TOKEN не задана!")
-
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # команды
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("guests", cmd_guests))
 
-    # JobQueue — проверка новых гостей каждые 5 сек
     app.job_queue.run_repeating(check_new_guests, interval=5, first=0)
 
-    # long polling
     print("🚀 Bot is starting (long polling)…")
-    app.run_polling(allowed_updates=UpdateType.ALL_TYPES)
+    app.run_polling()  # ← без лишних аргументов!
 
 
 if __name__ == "__main__":
