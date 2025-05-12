@@ -3,13 +3,15 @@ import os
 import asyncio
 from datetime import datetime, timezone
 
-from telegram import Update, constants
+from telegram import Update
+from telegram.constants import UpdateType
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
     JobQueue,
 )
+
 
 from sqlalchemy import (
     create_engine,
@@ -130,7 +132,7 @@ def main() -> None:
 
     # long polling
     print("🚀 Bot is starting (long polling)…")
-    app.run_polling(allowed_updates=constants.Update.ALL_TYPES)
+    app.run_polling()
 
 
 if __name__ == "__main__":
