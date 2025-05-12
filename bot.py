@@ -38,9 +38,9 @@ class Guest(Base):
     __tablename__ = "guests"
 
     id = Column(Integer, primary_key=True)
-    name = Column(String, 128, nullable=False)
-    partner = Column(String, 128)
-    wishes = Column(String, 512)
+    name = Column(String(128), nullable=False)
+    partner = Column(String(128))
+    wishes = Column(String(512))
     attending = Column(Boolean, default=True)
     notified = Column(Boolean, default=False)
     created = Column(DateTime, default=lambda: datetime.now(timezone.utc))
