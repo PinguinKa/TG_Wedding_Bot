@@ -61,7 +61,7 @@ async def cmd_guests(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ───────────── фоновая проверка новых гостей ──────────────
-last_ts = "1970-01-01T00:00:00.000000+0000"  # ISO-строка
+last_ts = "1970-01-01T00:00:00+00:00"
 
 
 async def check_new_guests(ctx: ContextTypes.DEFAULT_TYPE):
