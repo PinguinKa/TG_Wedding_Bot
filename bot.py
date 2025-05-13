@@ -60,6 +60,31 @@ async def cmd_guests(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
+async def cmd_registry(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(
+            f"{SITE_URL}/api/guests",
+            params={"attending": "yes", "in_registry": "yes"},
+            headers=HEADERS,
+        )
+        guests = r.json()
+
+    if not guests:
+        await update.message.reply_text("Пока никто не выбрал участие в ЗАГСе 😢")
+        return
+
+    lines = ["🏛️ <b>Гости, идущие в ЗАГС:</b>"]
+    for idx, g in enumerate(guests, 1):
+        line = f"<b>{idx}) {g['name']}</b>"
+        if g.get("partner"):
+            line += f"<b> + {g['partner'].strip()}</b>"
+        if g.get("wishes"):
+            line += f". <i>Пожелания: {g['wishes'].strip()}</i>"
+        lines.append(line)
+
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
 # ───────────── фоновая проверка новых гостей ──────────────
 last_ts = "1970-01-01T00:00:00+00:00"
 
@@ -87,6 +112,7 @@ async def check_new_guests(ctx: ContextTypes.DEFAULT_TYPE):
             f"💌 <b>Ответ на приглашение</b>\n"
             f"👤 <b>Гость:</b> {g['name']}\n"
             f"✅ <b>Будет:</b> {'Да' if g['attending'] else 'Нет'}\n"
+            f"📍 <b>ЗАГС:</b> {'Да' if g['in_registry'] else 'Нет'}\n"
             f"💑 <b>Партнёр:</b> {g['partner'].strip() if g['partner'] else 'Нет'}\n"
             f"📝 <b>Пожелания:</b> {g['wishes'].strip() if g['wishes'] else 'Нет'}"
         )
@@ -106,6 +132,8 @@ def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("guests", cmd_guests))
+    app.add_handler(CommandHandler("registry", cmd_registry))
+
     app.job_queue.run_repeating(check_new_guests, interval=5, first=0)
     print("🚀 Bot is starting (long polling)…")
     app.run_polling()
